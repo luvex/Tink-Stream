@@ -14,17 +14,20 @@ public class SNProducer
 	private static KafkaProducer<String, String> producer;
 	private final Properties props = new Properties();
 	private static String topic;
-	private static int randomObjectNumber;
+	private int number;
 
-	public SNProducer(String _topic, int _randomObjectNumber)
+	private static int MAP_Node_Size = 10000;
+	private static int session_length = 5000;
+
+	public SNProducer(String _topic, int number)
 	{
 		props.put("bootstrap.servers", Configurations.BROKER_LIST_LOCAL);
 		props.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
 		props.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
-		producer = new KafkaProducer<String,String>(props);
+		producer = new KafkaProducer<String, String>(props);
 
 		topic = _topic;
-		randomObjectNumber = _randomObjectNumber;
+		this.number = number;
 
 	}
 
@@ -33,14 +36,25 @@ public class SNProducer
 
 		Random random = new Random();
 		String messageStr = null;
-		int i = 500000;
-		while ((i--) != 0)
+		
+		while ((number--) != 0)
 		{
-			messageStr = random.nextInt(randomObjectNumber) + "";
+			long down = System.currentTimeMillis();
+			long up = random.nextInt(session_length) + down;
+			messageStr = random.nextInt(MAP_Node_Size) + random.nextInt(MAP_Node_Size) + "|" + down + "|" + up;
 			ProducerRecord<String, String> data = new ProducerRecord<String, String>(topic, messageStr);
 			producer.send(data);
 			if (Configurations.IS_LOCAL)
 				System.out.println("sent: " + data);
+			try
+			{
+				Thread.sleep(random.nextInt(5000));
+			}
+			catch (InterruptedException e)
+			{
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
 		}
 		producer.close();
 	}

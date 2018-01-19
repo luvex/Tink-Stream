@@ -2,16 +2,20 @@ package edu.nl.tue.tink.app;
 
 import java.util.Properties;
 
-import org.apache.flink.api.common.functions.FlatMapFunction;
+import org.apache.flink.api.common.functions.FilterFunction;
+import org.apache.flink.api.common.functions.JoinFunction;
 import org.apache.flink.api.common.serialization.SimpleStringSchema;
-import org.apache.flink.api.java.tuple.Tuple2;
+import org.apache.flink.api.java.functions.KeySelector;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.windowing.assigners.SlidingProcessingTimeWindows;
+import org.apache.flink.streaming.api.windowing.time.Time;
 import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer010;
-import org.apache.flink.util.Collector;
 
 public class FlightAnalysis
 {
+	private static String depature = "Dusseldorf";
+	private static String arrival = "Amsterdam";
 
 	public FlightAnalysis()
 	{
@@ -26,27 +30,92 @@ public class FlightAnalysis
 		properties.setProperty("bootstrap.servers", "localhost:9092");
 		properties.setProperty("group.id", "test");
 
-		FlinkKafkaConsumer010<String> myConsumer = new FlinkKafkaConsumer010<>(
-		    java.util.regex.Pattern.compile("topic[0-9]"),
-		    new SimpleStringSchema(),
-		    properties);
+		FlinkKafkaConsumer010<String> arrConsumer = new FlinkKafkaConsumer010<>(java.util.regex.Pattern.compile("arr"),
+				new SimpleStringSchema(), properties);
+		FlinkKafkaConsumer010<String> depConsumer = new FlinkKafkaConsumer010<>(java.util.regex.Pattern.compile("dep"),
+				new SimpleStringSchema(), properties);
 
-		DataStream<Tuple2<String, Integer>> stream = env.addSource(myConsumer)
-                .flatMap(new Splitter())
-                .countWindowAll(3)
-                .sum(1);
+		DataStream<String> arrstream = env.addSource(arrConsumer);
 
-		stream.print();
+		DataStream<String> depstream = env.addSource(depConsumer);
+
+		DataStream<String> joinedstream = arrstream.join(depstream).where(new Selector()).equalTo(new Selector())
+				.window(SlidingProcessingTimeWindows.of(Time.seconds(10), Time.seconds(5))).apply(new myJoinFunction())
+				.filter(new mydepFilterFunction()).filter(new myarrFilterFunction());
+
+		
+		joinedstream.print();
+		
 		env.execute("Flight analysis");
 	}
+
+	public static class Selector implements KeySelector<String, String>
+	{
+
+		@Override
+		public String getKey(String arg0) throws Exception
+		{
+			// TODO Auto-generated method stub
+			try
+			{
+			return arg0.split("\\|")[3];
+			}
+			catch(Exception e)
+			{
+				
+			}
+			return "";
+		}
+
+	}
+
+	public static class myJoinFunction implements JoinFunction<String, String, String>
+	{
+
+		@Override
+		public String join(String arg0, String arg1) throws Exception
+		{
+			// TODO Auto-generated method stub
+			// System.out.println(arg0 + "|" + arg1);
+
+			return arg1.split("\\|")[0] + "|" + arg1.split("\\|")[1] + "|" + arg1.split("\\|")[2] + "|"
+					+ arg0.split("\\|")[1] + "|" + arg1.split("\\|")[3];
+		}
+
+	}
+
+	public static class mydepFilterFunction implements FilterFunction<String>
+	{
+
+		@Override
+		public boolean filter(String arg0) throws Exception
+		{
+			// TODO Auto-generated method stub
+			if(depature.isEmpty())
+				return true;
+			if(arg0.split("\\|")[0].equals(depature))
+				return true;
+			else
+				return false;
+		}
+		
+	}
 	
-	public static class Splitter implements FlatMapFunction<String, Tuple2<String, Integer>> {
-        @Override
-        public void flatMap(String sentence, Collector<Tuple2<String, Integer>> out) throws Exception {
-            for (String word: sentence.split(" ")) {
-                out.collect(new Tuple2<String, Integer>(word, 1));
-            }
-        }
-    }
-	
+	public static class myarrFilterFunction implements FilterFunction<String>
+	{
+
+		@Override
+		public boolean filter(String arg0) throws Exception
+		{
+			// TODO Auto-generated method stub
+			if(arrival.isEmpty())
+				return true;
+			if(arg0.split("\\|")[2].equals(arrival))
+				return true;
+			else
+				return false;
+		}
+		
+	}
+
 }
